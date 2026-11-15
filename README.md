@@ -1,89 +1,126 @@
-# Project Iris
+# iris vision
 
-Webcam gaze tracking demo. It tracks your pupils with MediaPipe Face Mesh, lifts the pupil displacement onto the unit sphere, filters it there, and projects the result onto the screen. Each tracked frame is also classified into one of nine regions on a 3x3 grid (`top left` … `bottom right`).
+![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## Requirements
+iris vision is a Python (3.9 – 3.12) demo that turns an ordinary webcam into a **real-time eye tracker**. It shows where on the screen you are looking, tells you which of nine screen regions that is (`top left` … `bottom right`), and can save every gaze point to a JSON file.
 
-- Python 3.9 – 3.12 (developed on 3.11)
-- A webcam
-- macOS, Linux, or Windows
+No special hardware is needed, and everything runs on your own computer.
 
-## Setup
+## Installation
 
-```bash
+You need Python **3.9 – 3.12** and a webcam. It works on macOS, Linux, and Windows.
+
+Not sure which Python you have? Run `python3 --version` (on Windows, `python --version`). If it is missing or too old, get it from [python.org](https://www.python.org/downloads/).
+
+Download the project:
+
+```shell
 git clone https://github.com/racheleasen/iris_vision.git
 cd iris_vision
+```
 
+Then install the three libraries it uses. The first two lines create a virtual environment, a private folder for this project's libraries so they don't mix with the rest of your system:
+
+```shell
 python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-
+source .venv/bin/activate        # On Windows: .venv\Scripts\activate
 pip install opencv-python mediapipe numpy
 ```
 
-The demo uses MediaPipe's `solutions.face_mesh` API. It was developed with `mediapipe 0.10.21`, `opencv-python 4.10`, and `numpy 1.24`; if a newer MediaPipe release fails with an error about `mediapipe.solutions`, pin that version:
+> **Error mentioning `mediapipe.solutions`?** Newer MediaPipe releases may drop the API this demo uses. Install the version it was developed with: `pip install mediapipe==0.10.21`
 
-```bash
-pip install mediapipe==0.10.21
-```
+### Run the demo
 
-On macOS, the first run asks for camera permission for your terminal app. Grant it under **System Settings → Privacy & Security → Camera**, then run the program again.
-
-## Running
-
-```bash
+```shell
 python3 src/demo.py
 ```
 
-A preview window opens showing the camera feed with the gaze point, the 3x3 region grid, and the region you are currently looking at. Press **ESC** to quit.
+A window opens showing your camera feed. Press **ESC** to quit.
 
-### Calibration
+> **On macOS**, the first run asks for camera permission for your terminal app. Allow it under **System Settings → Privacy & Security → Camera**, then run the command again.
 
-On start, the preview dims and shows a target in its centre. Look at the dot and hold still: after about a second the ring around it fills while your pupil position is captured (about two seconds in total). That pose becomes "looking at the centre" for you, your head position, and your camera. If your face is lost or too few frames are captured, it starts over on its own.
+## Your first run
 
-- Keep the preview window in the middle of your screen (or maximised) so the target really is at the screen centre.
-- Press **C** to recalibrate at any time, for example after shifting in your seat.
-- Pass `--no-calibrate` to skip it. The demo then uses a slowly adapting baseline, which drifts toward wherever you keep looking.
+1. **Calibrate.** The preview dims and shows a dot in the centre. Look at the dot and hold still for about two seconds while the ring around it fills. This teaches the demo what "looking at the centre" means for you, your seat, and your camera.
+2. **Look around.** The preview now shows:
+   - **Green dot**: where the demo thinks you are looking
+   - **Green rectangle**: which of the nine regions that is
+   - **Yellow cross**: where a straight-ahead gaze currently lands
+3. **Press C** to calibrate again whenever the dot feels off, for example after shifting in your seat.
 
-After calibration you can still move your head: the centre point shifts with your eyes relative to where they were during calibration.
+Two tips for good results:
 
-### Saving gaze data to JSON
+- Keep the preview window in the middle of your screen (or maximised), so the calibration dot really is at the screen centre.
+- Your head does not need to be centred in the camera, and you can move it after calibrating. The centre point follows your head.
 
-Gaze samples are not printed to the terminal. To record them, pass `--export`:
+If your face is lost during calibration, it starts over on its own.
 
-```bash
+## Simple example: use the gaze data
+
+Record a session to a file. The file is written when you quit with **ESC**:
+
+```shell
 python3 src/demo.py --export gaze.json
+```
+
+Then read it with a few lines of Python. This script prints how much of the session you spent looking at each region:
+
+```python
+import json
+from collections import Counter
+
+with open("gaze.json") as f:
+    data = json.load(f)
+
+samples = data["samples"]
+regions = Counter(sample["region"] for sample in samples)
+
+for region, count in regions.most_common():
+    print(f"{region:15} {count / len(samples):.0%}")
+```
+
+```
+middle center   62%
+top center      21%
+middle left     17%
+```
+
+## Documentation
+
+### Command-line options
+
+Add these after `python3 src/demo.py`. You can combine them.
+
+| Option | What it does |
+| --- | --- |
+| `--export PATH` | Save every gaze sample to this JSON file when you quit. |
+| `--screen-size WxH` | Your screen size in pixels, used for the saved `x` and `y`, e.g. `1920x1080`. Defaults to the camera frame size. |
+| `--camera N` | Which camera to use, if you have more than one. Defaults to `0`. |
+| `--no-calibrate` | Skip the calibration on start. Press `C` to run it later. |
+
+For example:
+
+```shell
 python3 src/demo.py --export gaze.json --screen-size 1920x1080
 ```
 
-The file is written when you quit.
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--export PATH` | Write per-frame gaze samples to this JSON file on exit. |
-| `--screen-size WxH` | Screen size in pixels for the exported `x`/`y`, e.g. `1920x1080`. Defaults to the camera frame size. |
-| `--camera N` | Camera index. Defaults to `0`. |
-| `--no-calibrate` | Skip the centre calibration on start. Press `C` to run it later. |
+Without calibration, the demo uses a slowly adapting baseline that drifts toward wherever you keep looking, so calibrating gives better results.
 
 ### Keys
+
+Press these while the preview window is selected.
 
 | Key | Action |
 | --- | --- |
 | `ESC` | Quit |
-| `C` | Recalibrate (look at the centre target) |
-| `[` / `]` | Decrease / increase vertical gain when looking down |
-| `-` / `=` | Decrease / increase vertical gain when looking up |
+| `C` | Recalibrate (look at the centre dot) |
+| `[` / `]` | Decrease / increase how far the dot moves when you look down |
+| `-` / `=` | Decrease / increase how far the dot moves when you look up |
 
-## Preview window
+### The export file
 
-- **Green dot**: estimated gaze point
-- **Green rectangle**: active region of the 3x3 grid
-- **Yellow cross**: where a straight-ahead (calibrated centre) gaze currently lands
-
-Your head does not need to be centred in the camera frame. Once calibrated, the neutral gaze is the screen centre for the head position you calibrated in and follows your head from there. Without calibration it is anchored to where your eyes sit in the frame. Either way, the gaze range on each side of that anchor is stretched to reach its screen edge.
-
-## Export format
+`--export` writes one JSON file that looks like this:
 
 ```json
 {
@@ -101,24 +138,58 @@ Your head does not need to be centred in the camera frame. Once calibrated, the 
 }
 ```
 
+Each entry in `samples` is one camera frame:
+
 | Field | Meaning |
 | --- | --- |
-| `calibration` | The most recent centre calibration (`t` = seconds since start when it completed), or `null` if none was run. |
-| `frame` | Camera frame index. Frames with no face are skipped, so gaps mean tracking was lost. Frames shown while the calibration target is up are skipped too. |
+| `frame` | Camera frame number. Frames with no face are skipped, so a gap means tracking was lost. Frames during calibration are skipped too. |
 | `t` | Seconds since the program started. |
-| `x`, `y` | Gaze point in pixels on the screen given by `--screen-size`. |
-| `nx`, `ny` | The same point normalised to 0..1. |
-| `region` | Which of the nine grid regions the gaze is in. |
+| `x`, `y` | Gaze point in pixels, on the screen size given by `--screen-size`. |
+| `nx`, `ny` | The same point as a number from 0 to 1, independent of screen size. |
+| `region` | Which of the nine regions the gaze is in. |
 
-Coordinates use a top-left origin with x to the right and y down, from your point of view: looking at the left of the screen gives a small `x`.
+`x` and `y` start at the top-left corner of the screen: `x` grows to the right and `y` grows downward, from your point of view. Looking at the left of the screen gives a small `x`.
+
+`calibration` describes the most recent calibration (`t` is when it finished), or is `null` if you never calibrated.
+
+### The nine regions
+
+```
+top left      top center      top right
+middle left   middle center   middle right
+bottom left   bottom center   bottom right
+```
+
+### Tuning
+
+The settings live as constants near the top of `src/demo.py`. The ones you are most likely to change:
+
+| Constant | What it does |
+| --- | --- |
+| `GAIN_Y_DOWN`, `GAIN_Y_UP` | How far the dot moves when you look down or up. Find good values live with `[` `]` and `-` `=`, then set them here to keep them. |
+| `HEAD_MIRROR_X` | Set to `False` if your camera delivers a mirrored feed. |
+| `SMOOTH_ALPHA` | How much the gaze point is smoothed. Lower is steadier but slower to react. |
+
+## How it works
+
+1. [MediaPipe Face Mesh](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) finds your pupils and irises in each camera frame.
+2. The demo measures how far each pupil has moved from its calibrated centre position.
+3. That movement is lifted onto a unit sphere (a model of the eyeball rotating) and smoothed there.
+4. The result is projected onto the screen as a gaze point and sorted into one of the nine regions.
+
+All of the code is in one file, `src/demo.py`.
 
 ## Troubleshooting
 
-- **`Could not open camera 0`**: another app is using the camera, camera permission was not granted, or the index is wrong. Try `--camera 1`.
-- **Gaze is offset even when looking at the centre**: press `C` and recalibrate with the preview window centred on your screen.
-- **Gaze moves the wrong way horizontally**: your camera delivers a mirrored feed. Set `HEAD_MIRROR_X = False` near the top of `src/demo.py`.
-- **Vertical gaze under- or overshoots**: adjust the gains live with `[` `]` and `-` `=`, then set `GAIN_Y_DOWN` / `GAIN_Y_UP` in `src/demo.py` to keep them.
+- **`Could not open camera 0`**: another app is using the camera, camera permission was not granted, or the camera number is wrong. Try `--camera 1`.
+- **The dot is off even when you look at the centre**: press `C` and recalibrate with the preview window centred on your screen.
+- **The dot moves the wrong way left and right**: your camera delivers a mirrored feed. Set `HEAD_MIRROR_X = False` near the top of `src/demo.py`.
+- **The dot moves too little or too much up and down**: adjust it live with `[` `]` and `-` `=`.
+
+## You want to help?
+
+Bug reports and pull requests are welcome. If the tracking works poorly for you, please open an issue and mention your camera, lighting, and whether you wear glasses; that is the most useful information for improving it.
 
 ## License
 
-[MIT](LICENSE)
+Released under the [MIT license](LICENSE).
