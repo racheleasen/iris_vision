@@ -4,9 +4,9 @@ project iris: webcam gaze tracking demo (Gaussian binocular S² model).
 Tracks the pupils with MediaPipe Face Mesh, lifts the pupil displacement onto
 the unit sphere, filters it there, and projects the result onto the screen.
 
-    python3 demo.py                              # live preview
-    python3 demo.py --export gaze.json           # also save screen coordinates
-    python3 demo.py --export gaze.json --screen-size 1920x1080
+    python3 src/demo.py                              # live preview
+    python3 src/demo.py --export gaze.json           # also save screen coordinates
+    python3 src/demo.py --export gaze.json --screen-size 1920x1080
 
 Output
 ------

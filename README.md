@@ -31,7 +31,7 @@ On macOS, the first run asks for camera permission for your terminal app. Grant 
 ## Running
 
 ```bash
-python3 demo.py
+python3 src/demo.py
 ```
 
 A preview window opens showing the camera feed with the gaze point, the 3x3 region grid, and the region you are currently looking at. Press **ESC** to quit.
@@ -51,8 +51,8 @@ After calibration you can still move your head: the centre point shifts with you
 Gaze samples are not printed to the terminal. To record them, pass `--export`:
 
 ```bash
-python3 demo.py --export gaze.json
-python3 demo.py --export gaze.json --screen-size 1920x1080
+python3 src/demo.py --export gaze.json
+python3 src/demo.py --export gaze.json --screen-size 1920x1080
 ```
 
 The file is written when you quit.
@@ -116,8 +116,8 @@ Coordinates use a top-left origin with x to the right and y down, from your poin
 
 - **`Could not open camera 0`**: another app is using the camera, camera permission was not granted, or the index is wrong. Try `--camera 1`.
 - **Gaze is offset even when looking at the centre**: press `C` and recalibrate with the preview window centred on your screen.
-- **Gaze moves the wrong way horizontally**: your camera delivers a mirrored feed. Set `HEAD_MIRROR_X = False` near the top of `demo.py`.
-- **Vertical gaze under- or overshoots**: adjust the gains live with `[` `]` and `-` `=`, then set `GAIN_Y_DOWN` / `GAIN_Y_UP` in `demo.py` to keep them.
+- **Gaze moves the wrong way horizontally**: your camera delivers a mirrored feed. Set `HEAD_MIRROR_X = False` near the top of `src/demo.py`.
+- **Vertical gaze under- or overshoots**: adjust the gains live with `[` `]` and `-` `=`, then set `GAIN_Y_DOWN` / `GAIN_Y_UP` in `src/demo.py` to keep them.
 
 ## License
 
