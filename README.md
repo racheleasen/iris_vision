@@ -28,8 +28,6 @@ source .venv/bin/activate        # On Windows: .venv\Scripts\activate
 pip install opencv-python mediapipe numpy
 ```
 
-> **Error mentioning `mediapipe.solutions`?** Newer MediaPipe releases may drop the API this demo uses. Install the version it was developed with: `pip install mediapipe==0.10.21`
-
 ### Run the demo
 
 ```shell
@@ -55,36 +53,6 @@ Two tips for good results:
 - Your head does not need to be centred in the camera, and you can move it after calibrating. The centre point follows your head.
 
 If your face is lost during calibration, it starts over on its own.
-
-## Simple example: use the gaze data
-
-Record a session to a file. The file is written when you quit with **ESC**:
-
-```shell
-python3 src/demo.py --export gaze.json
-```
-
-Then read it with a few lines of Python. This script prints how much of the session you spent looking at each region:
-
-```python
-import json
-from collections import Counter
-
-with open("gaze.json") as f:
-    data = json.load(f)
-
-samples = data["samples"]
-regions = Counter(sample["region"] for sample in samples)
-
-for region, count in regions.most_common():
-    print(f"{region:15} {count / len(samples):.0%}")
-```
-
-```
-middle center   62%
-top center      21%
-middle left     17%
-```
 
 ## Documentation
 
