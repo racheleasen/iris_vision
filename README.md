@@ -1,85 +1,37 @@
 # iris vision
 
-**Exploring accessible gaze-assisted communication using nothing more than a standard webcam.**
+**Gaze tracking with nothing more than a standard webcam.**
 
-iris vision is an experimental, open-source Python project that explores how consumer webcams can be used for real-time gaze tracking and screen interaction without specialized eye-tracking hardware. 
+iris vision is an experimental, open-source Python demo. It watches your eyes through your webcam, estimates where on the screen you are looking, and sorts that into one of nine regions. There is no special hardware, and calibration takes about two seconds.
 
-Built with OpenCV, MediaPipe, and NumPy, it estimates gaze coordinates from eye movement and maps them to nine regions of the screen using a simple, single-point calibration process.
+Dedicated eye trackers can be very accurate, but their cameras, infrared lighting, and cost put them out of reach for many people. iris vision asks a different question: **what useful communication capabilities can we build with the webcam people already own?**
 
-The goal is to explore how far we can push everyday hardware to make gaze-assisted communication more accessible.
+> This is a research prototype, not a replacement for dedicated assistive technology. See [Limitations](#limitations).
 
-### Why this project?
-
-High-end eye-tracking systems can offer impressive accuracy, but specialized cameras, infrared illumination, and hardware costs can create barriers to access.
-
-iris vision explores a different approach: **What useful communication capabilities can we build with the webcam people already own?**
-
-This is an experimental starting point, not a replacement for dedicated assistive technology. 
-
-### What it does
-
-- Real-time gaze estimation using a standard webcam
-- Single-point gaze calibration
-- Nine-region screen mapping
-- Smoothed gaze coordinates
-- JSON export of gaze samples for experimentation
-- Adjustable tracking sensitivity
-
-## Current limitations
-
-Iris Vision is an experimental gaze-tracking prototype. It is designed to explore the possibilities of consumer webcam-based interaction, not to provide clinically validated eye tracking.
-
-Current limitations include:
-
-- Single-point calibration provides an approximate screen-relative gaze estimate.
-- Accuracy varies with webcam quality, lighting, viewing distance, and camera positioning.
-- Glasses, reflections, eyelid occlusion, and individual differences can affect tracking.
-- Extended gaze interaction may cause eye fatigue.
-- The current implementation estimates gaze position but does not yet provide a complete communication interface.
-- No clinical accuracy or usability validation has been performed.
-
-The goal is to explore, experiment, and improve accessibility through readily available hardware.
-
-### Built with
-
-Python · OpenCV · MediaPipe · NumPy
-
-### Project status
-
-Experimental research prototype. Accuracy, stability, and usability vary with camera quality, lighting, positioning, and individual differences.
-
-Contributions, experiments, and ideas are welcome.
-
-## Installation
+## Quick start
 
 You need Python **3.9 – 3.12** and a webcam. It works on macOS, Linux, and Windows.
-
-Not sure which Python you have? Run `python3 --version` (on Windows, `python --version`). If it is missing or too old, get it from [python.org](https://www.python.org/downloads/).
-
-Download the project:
 
 ```shell
 git clone https://github.com/racheleasen/iris_vision.git
 cd iris_vision
-```
-
-Then install the three libraries it uses (OpenCV, MediaPipe, and NumPy, listed in `requirements.txt`). The first two lines create a virtual environment, a private folder for this project's libraries so they don't mix with the rest of your system:
-
-```shell
 python3 -m venv .venv
 source .venv/bin/activate        # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### Run the demo
-
-```shell
 python3 main.py
 ```
 
 A window opens showing your camera feed. Press **ESC** to quit.
 
-> **On macOS**, the first run asks for camera permission for your terminal app. Allow it under **System Settings → Privacy & Security → Camera**, then run the command again.
+<details>
+<summary>New to Python, or something didn't work?</summary>
+
+- **Check your Python version** with `python3 --version` (on Windows, `python --version`). If it is missing or too old, get it from [python.org](https://www.python.org/downloads/).
+- **What the `venv` lines do:** they create a virtual environment, a private folder for this project's libraries (OpenCV, MediaPipe, and NumPy) so they don't mix with the rest of your system.
+- **On macOS**, the first run asks for camera permission for your terminal app. Allow it under **System Settings → Privacy & Security → Camera**, then run `python3 main.py` again.
+- For anything else, see [Troubleshooting](#troubleshooting).
+
+</details>
 
 ## Your first run
 
@@ -97,7 +49,20 @@ Two tips for good results:
 
 If your face is lost during calibration, it starts over on its own.
 
-## Documentation
+## Going further
+
+Everything below is optional. Open the parts you need.
+
+### Keys
+
+Press these while the preview window is selected.
+
+| Key | Action |
+| --- | --- |
+| `ESC` | Quit |
+| `C` | Recalibrate (look at the centre dot) |
+| `[` / `]` | Decrease / increase how far the dot moves when you look down |
+| `-` / `=` | Decrease / increase how far the dot moves when you look up |
 
 ### Command-line options
 
@@ -119,7 +84,7 @@ python3 main.py --export gaze.json --screen-size 1920x1080
 
 Without calibration, the demo uses a slowly adapting baseline that drifts toward wherever you keep looking, so calibrating gives better results.
 
-### Dwell selection
+### Selecting with your eyes (dwell)
 
 With `--dwell SECONDS`, keeping your gaze in one region for that long selects it:
 
@@ -127,20 +92,22 @@ With `--dwell SECONDS`, keeping your gaze in one region for that long selects it
 python3 main.py --dwell 1.0
 ```
 
-A bar fills along the bottom of the active region while you hold your gaze there. When it is full, the region's outline turns thick, the label changes from `looking` to `selected`, and `selected <region>` is printed in the terminal. A region is selected once per look: to select it again, look away and come back. A blink does not restart the timer, but losing your face for more than about a third of a second does.
+A bar fills along the bottom of the active region while you hold your gaze there. When it is full, the region's outline turns thick, the label changes from `looking` to `selected`, and `selected <region>` is printed in the terminal.
 
-### Keys
+A region is selected once per look: to select it again, look away and come back. A blink does not restart the timer, but losing your face for more than about a third of a second does.
 
-Press these while the preview window is selected.
+### The nine regions
 
-| Key | Action |
-| --- | --- |
-| `ESC` | Quit |
-| `C` | Recalibrate (look at the centre dot) |
-| `[` / `]` | Decrease / increase how far the dot moves when you look down |
-| `-` / `=` | Decrease / increase how far the dot moves when you look up |
+```
+top left      top center      top right
+middle left   middle center   middle right
+bottom left   bottom center   bottom right
+```
 
-### The export file
+### Reference
+
+<details>
+<summary><strong>The export file</strong>: what <code>--export</code> saves</summary>
 
 `--export` writes one JSON file that looks like this:
 
@@ -180,15 +147,10 @@ Each entry in `samples` is one camera frame:
 
 `dwell_seconds` is the `--dwell` time, or `null` if dwell was off. `selections` lists every dwell selection: the frame and time the dwell completed, and the region that was selected.
 
-### The nine regions
+</details>
 
-```
-top left      top center      top right
-middle left   middle center   middle right
-bottom left   bottom center   bottom right
-```
-
-### Tuning
+<details>
+<summary><strong>Tuning</strong>: settings you can change in the code</summary>
 
 The settings live as constants near the top of the two files in `src/`. The ones you are most likely to change:
 
@@ -198,22 +160,10 @@ The settings live as constants near the top of the two files in `src/`. The ones
 | `HEAD_MIRROR_X` | `gaze_math.py` | Set to `False` if your camera delivers a mirrored feed. |
 | `SMOOTH_ALPHA` | `gaze_engine.py` | How much the gaze point is smoothed. Lower is steadier but slower to react. |
 
-## How it works
+</details>
 
-1. [MediaPipe Face Mesh](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) finds your pupils and irises in each camera frame.
-2. The demo measures how far each pupil has moved from its calibrated centre position.
-3. That movement is lifted onto a unit sphere (a model of the eyeball rotating) and smoothed there.
-4. The result is projected onto the screen as a gaze point and sorted into one of the nine regions.
-
-### Project layout
-
-| File | What it holds |
-| --- | --- |
-| `main.py` | The program you run: camera loop, preview window, keys, and JSON export. |
-| `src/gaze_engine.py` | The gaze engine. Takes camera frames, keeps the tracking state (calibration, smoothing, dwell timer), and returns a result for each frame. No window or camera code. |
-| `src/gaze_math.py` | The math: sphere lift and filter, screen projection, head anchor, and the nine regions. Needs only NumPy. |
-
-### Using the engine in your own interface
+<details>
+<summary><strong>Using the engine in your own interface</strong></summary>
 
 `main.py` is one interface on top of the engine; you can build another. Feed the engine camera frames and it returns a `GazeResult` for each:
 
@@ -247,6 +197,23 @@ with GazeEngine(dwell_s=1.0, screen_size=(1920, 1080)) as engine:
 
 The gaze fields from `nx` to `dwell` are `None` unless `status` is `"tracking"`. `result.to_dict()` returns the same data as a plain dictionary, ready for `json.dumps`. Call `engine.recalibrate()` to run the calibration again, and set `engine.gain_y_up` / `engine.gain_y_down` to change the vertical gain.
 
+</details>
+
+## How it works
+
+1. [MediaPipe Face Mesh](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) finds your pupils and irises in each camera frame.
+2. The demo measures how far each pupil has moved from its calibrated centre position.
+3. That movement is lifted onto a unit sphere (a model of the eyeball rotating) and smoothed there.
+4. The result is projected onto the screen as a gaze point and sorted into one of the nine regions.
+
+The code is three files:
+
+| File | What it holds |
+| --- | --- |
+| `main.py` | The program you run: camera loop, preview window, keys, and JSON export. |
+| `src/gaze_engine.py` | The gaze engine. Takes camera frames, keeps the tracking state (calibration, smoothing, dwell timer), and returns a result for each frame. No window or camera code. |
+| `src/gaze_math.py` | The math: sphere lift and filter, screen projection, head anchor, and the nine regions. Needs only NumPy. |
+
 ## Troubleshooting
 
 - **`Could not open camera 0`**: another app is using the camera, camera permission was not granted, or the camera number is wrong. Try `--camera 1`.
@@ -254,22 +221,33 @@ The gaze fields from `nx` to `dwell` are `None` unless `status` is `"tracking"`.
 - **The dot moves the wrong way left and right**: your camera delivers a mirrored feed. Set `HEAD_MIRROR_X = False` near the top of `src/gaze_math.py`.
 - **The dot moves too little or too much up and down**: adjust it live with `[` `]` and `-` `=`.
 
-## You want to help?
+## Limitations
 
-Bug reports and pull requests are welcome. If the tracking works poorly for you, please open an issue and mention your camera, lighting, and whether you wear glasses; that is the most useful information for improving it.
+iris vision is an experimental gaze-tracking prototype. It explores what consumer webcams can do; it does not provide clinically validated eye tracking.
 
-### Support Project Iris
+- Single-point calibration gives an approximate screen-relative gaze estimate.
+- Accuracy varies with webcam quality, lighting, viewing distance, and camera positioning.
+- Glasses, reflections, eyelid occlusion, and individual differences can affect tracking.
+- Extended gaze interaction may cause eye fatigue.
+- It estimates gaze position but is not yet a complete communication interface.
+- No clinical accuracy or usability validation has been performed.
+
+## Want to help?
+
+Bug reports, pull requests, experiments, and ideas are all welcome. If the tracking works poorly for you, please open an issue and mention your camera, lighting, and whether you wear glasses; that is the most useful information for improving it.
+
+### Support project iris
 
 iris vision is affiliated with [project iris](https://www.projectiris.app/), and the best way to support this work is to support project iris.
 
-project iris is building a free gaze communication tool for people who rely on non-verbal communication, using only a webcam. For many people with motor or speech impairments, eye-tracking communication systems can be life-changing, but commercial ones often need specialized hardware and can cost $10,000–$15,000 or more. Project Iris asks how much of that capability can be reached with everyday consumer technology, and its vision is to make gaze-based communication accessible to anyone with a standard webcam.
+project iris is building a free gaze communication tool for people who rely on non-verbal communication, using only a webcam. For many people with motor or speech impairments, eye-tracking communication systems can be life-changing, but commercial ones often need specialized hardware and can cost $10,000–$15,000 or more. project iris asks how much of that capability can be reached with everyday consumer technology, and its vision is to make gaze-based communication accessible to anyone with a standard webcam.
 
 You can help in two ways:
 
-- **Contribute** on the [Project Iris support page](https://www.projectiris.app/support). Contributions go toward research, development, and keeping gaze-assisted communication free.
+- **Contribute** on the [project iris support page](https://www.projectiris.app/support). Contributions go toward research, development, and keeping gaze-assisted communication free.
 - **Try it and share it.** The gaze tools run in your browser at [projectiris.app](https://www.projectiris.app/), with no install and no account.
 
-Project Iris is an experimental, non-clinical research initiative. It is not a medical device and does not replace clinically approved communication (AAC) systems.
+project iris is an experimental, non-clinical research initiative. It is not a medical device and does not replace clinically approved communication (AAC) systems.
 
 ## License
 

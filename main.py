@@ -30,7 +30,7 @@ from src.gaze_math import HEAD_MIRROR_X, REGION_NAMES, norm_to_pixels
 EXPORT_FORMAT = "project-iris-gaze"
 EXPORT_VERSION = 1
 
-WINDOW = "Project Iris"
+WINDOW = "project iris"
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 WHITE, GREEN = (255, 255, 255), (0, 255, 0)
 
@@ -176,7 +176,7 @@ def parse_dwell(text):
     return seconds
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="Project Iris: webcam gaze tracking demo.")
+    p = argparse.ArgumentParser(description="project iris: webcam gaze tracking demo.")
     p.add_argument("--export", metavar="PATH",
                    help="write per-frame screen coordinates to this JSON file on exit")
     p.add_argument("--screen-size", metavar="WxH", type=parse_screen_size,
