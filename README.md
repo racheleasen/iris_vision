@@ -25,6 +25,21 @@ This is an experimental starting point, not a replacement for dedicated assistiv
 - JSON export of gaze samples for experimentation
 - Adjustable tracking sensitivity
 
+## Current limitations
+
+Iris Vision is an experimental gaze-tracking prototype. It is designed to explore the possibilities of consumer webcam-based interaction, not to provide clinically validated eye tracking.
+
+Current limitations include:
+
+- Single-point calibration provides an approximate screen-relative gaze estimate.
+- Accuracy varies with webcam quality, lighting, viewing distance, and camera positioning.
+- Glasses, reflections, eyelid occlusion, and individual differences can affect tracking.
+- Extended gaze interaction may cause eye fatigue.
+- The current implementation estimates gaze position but does not yet provide a complete communication interface.
+- No clinical accuracy or usability validation has been performed.
+
+The goal is to explore, experiment, and improve accessibility through readily available hardware.
+
 ### Built with
 
 Python · OpenCV · MediaPipe · NumPy
