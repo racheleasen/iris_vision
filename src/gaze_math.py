@@ -24,7 +24,7 @@ MIRROR = -1.0
 # Vertical gain, split by direction. Looking down, the lids and eye corners
 # travel with the eye, so the measured pupil shift is much smaller than for
 # an equal upward look. These are the defaults; main.py tunes them live.
-GAIN_Y_UP = 1.0
+GAIN_Y_UP = 2.0
 GAIN_Y_DOWN = 2.0
 
 # Head-position compensation. The neutral (straight ahead) gaze lands where
