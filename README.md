@@ -158,6 +158,19 @@ All of the code is in one file, `src/demo.py`.
 
 Bug reports and pull requests are welcome. If the tracking works poorly for you, please open an issue and mention your camera, lighting, and whether you wear glasses; that is the most useful information for improving it.
 
+### Support Project Iris
+
+iris vision is affiliated with [Project Iris](https://www.projectiris.app/), and the best way to support this work is to support Project Iris.
+
+Project Iris is building a free gaze communication tool for people who rely on non-verbal communication, using only a webcam. For many people with motor or speech impairments, eye-tracking communication systems can be life-changing, but commercial ones often need specialized hardware and can cost $10,000–$15,000 or more. Project Iris asks how much of that capability can be reached with everyday consumer technology, and its vision is to make gaze-based communication accessible to anyone with a standard webcam.
+
+You can help in two ways:
+
+- **Contribute** on the [Project Iris support page](https://www.projectiris.app/support). Contributions go toward research, development, and keeping gaze-assisted communication free.
+- **Try it and share it.** The gaze tools run in your browser at [projectiris.app](https://www.projectiris.app/), with no install and no account.
+
+Project Iris is an experimental, non-clinical research initiative. It is not a medical device and does not replace clinically approved communication (AAC) systems.
+
 ## License
 
 Released under the [MIT license](LICENSE).
