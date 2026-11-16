@@ -2,7 +2,7 @@
 Gaze math for project iris (Gaussian binocular S² model).
 
 Pure functions and one small filter: pupil displacement -> unit sphere ->
-screen position -> 3x3 region. No camera, no MediaPipe and no drawing in here,
+screen position -> 3x2 region. No camera, no MediaPipe and no drawing in here,
 only numpy, so every step can be used and tested on its own. The per-frame
 state machine that strings these together is in gaze_engine.py.
 
@@ -40,10 +40,10 @@ HEAD_MIRROR_X = True
 # side of the split collapses to nothing.
 ANCHOR_MARGIN = 0.1
 
-# 3x3 gaze regions. A new region is only reported once the gaze is this far
-# (as a fraction of the screen) past the boundary, so it does not flicker
-# when the gaze sits on a grid line.
-REGION_ROWS = ("top", "middle", "bottom")
+# Six gaze regions: 3 columns x 2 rows. A new region is only reported once the
+# gaze is this far (as a fraction of the screen) past the boundary, so it does
+# not flicker when the gaze sits on a grid line.
+REGION_ROWS = ("top", "bottom")
 REGION_COLS = ("left", "center", "right")
 REGION_NAMES = [f"{r} {c}" for r in REGION_ROWS for c in REGION_COLS]
 REGION_HYSTERESIS = 0.03
@@ -164,18 +164,18 @@ def anchored_norm(i, anchor):
     return anchor + i * ((1.0 - anchor) if i >= 0 else anchor)
 
 # ---- Gaze regions ----------------------------------------------------------
-def region_cell(v, prev=None, margin=REGION_HYSTERESIS):
-    """Normalised coordinate (0..1) -> third of the screen it falls in (0, 1, 2).
+def region_cell(v, n, prev=None, margin=REGION_HYSTERESIS):
+    """Normalised coordinate (0..1) -> which of `n` equal bands it falls in.
 
     If `prev` is given, the cell only changes once `v` is more than `margin`
     past the edge of the previous cell.
     """
-    cell = min(2, max(0, int(v * 3)))
+    cell = min(n - 1, max(0, int(v * n)))
     if prev is not None and cell != prev:
-        if prev / 3 - margin <= v <= (prev + 1) / 3 + margin:
+        if prev / n - margin <= v <= (prev + 1) / n + margin:
             return prev
     return cell
 
 def region_name(col, row):
-    """Grid cell (col, row), each 0..2 -> e.g. 'top left', 'middle center'."""
+    """Grid cell (col 0..2, row 0..1) -> e.g. 'top left', 'bottom center'."""
     return f"{REGION_ROWS[row]} {REGION_COLS[col]}"

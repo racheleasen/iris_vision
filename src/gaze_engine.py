@@ -70,7 +70,7 @@ class GazeResult:
 
     `status` is "calibrating" while the centre target is up, "no_face" when no
     face was found, otherwise "tracking". The gaze fields (`nx` .. `anchor`)
-    are only set when status is "tracking".
+    and `head` are only set when status is "tracking".
     """
     frame: int                      # frame index, counting every frame fed in
     t: float                        # seconds since the first frame
@@ -84,8 +84,9 @@ class GazeResult:
     y: Optional[int] = None
     region: Optional[str] = None    # e.g. "top left"
     col: Optional[int] = None       # region column, 0..2 from the left
-    row: Optional[int] = None       # region row, 0..2 from the top
+    row: Optional[int] = None       # region row, 0..1 from the top
     anchor: Optional[Tuple[float, float]] = None     # neutral gaze point, 0..1
+    head: Optional[Tuple[float, float]] = None       # midpoint between the eyes, 0..1
     dwell: Optional[DwellState] = None               # set when dwell is enabled
 
     def to_dict(self):
@@ -311,14 +312,15 @@ class GazeEngine:
         nx = gm.anchored_norm(ix, anchor[0])   # 0 = left edge, 1 = right
         ny = gm.anchored_norm(iy, anchor[1])   # 0 = top edge,  1 = bottom
 
-        self._col = gm.region_cell(nx, self._col)
-        self._row = gm.region_cell(ny, self._row)
+        self._col = gm.region_cell(nx, len(gm.REGION_COLS), self._col)
+        self._row = gm.region_cell(ny, len(gm.REGION_ROWS), self._row)
         region = gm.region_name(self._col, self._row)
         dwell = self._dwell.update(region, now) if self._dwell is not None else None
 
         x, y = gm.norm_to_pixels(nx, ny, *self.screen_size)
         return self._result(now, face=True, nx=nx, ny=ny, x=x, y=y, region=region,
-                            col=self._col, row=self._row, anchor=anchor, dwell=dwell)
+                            col=self._col, row=self._row, anchor=anchor,
+                            head=gm.origin_norm(origin_raw, w, h), dwell=dwell)
 
     def recalibrate(self):
         """Show the centre target again and recapture the centre pose."""

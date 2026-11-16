@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 import cv2
 
 from src.gaze_engine import GazeEngine
-from src.gaze_math import HEAD_MIRROR_X, REGION_NAMES, norm_to_pixels
+from src.gaze_math import (HEAD_MIRROR_X, REGION_COLS, REGION_NAMES, REGION_ROWS,
+                           norm_to_pixels)
 
 EXPORT_FORMAT = "project-iris-gaze"
 EXPORT_VERSION = 1
@@ -110,13 +111,15 @@ def draw(frame, result, engine):
     if result.region is None:
         return frame
 
-    # 3x3 region grid, active cell highlighted
+    # 3x2 region grid, active cell highlighted
     h, w, _ = frame.shape
-    for k in (1, 2):
-        cv2.line(frame, (k * w // 3, 0), (k * w // 3, h), (90, 90, 90), 1)
-        cv2.line(frame, (0, k * h // 3), (w, k * h // 3), (90, 90, 90), 1)
-    x0, y0 = result.col * w // 3, result.row * h // 3
-    x1, y1 = (result.col + 1) * w // 3 - 1, (result.row + 1) * h // 3 - 1
+    cols, rows = len(REGION_COLS), len(REGION_ROWS)
+    for k in range(1, cols):
+        cv2.line(frame, (k * w // cols, 0), (k * w // cols, h), (90, 90, 90), 1)
+    for k in range(1, rows):
+        cv2.line(frame, (0, k * h // rows), (w, k * h // rows), (90, 90, 90), 1)
+    x0, y0 = result.col * w // cols, result.row * h // rows
+    x1, y1 = (result.col + 1) * w // cols - 1, (result.row + 1) * h // rows - 1
     dwell = result.dwell
     selected = dwell is not None and dwell.progress >= 1.0
     cv2.rectangle(frame, (x0, y0), (x1, y1), GREEN, 8 if selected else 2)
@@ -125,8 +128,9 @@ def draw(frame, result, engine):
         cv2.rectangle(frame, (x0, y1 - 10),
                       (x0 + int(dwell.progress * (x1 - x0)), y1), GREEN, -1)
 
-    # Head anchor (where a straight-ahead gaze lands) and gaze point
-    cv2.drawMarker(frame, norm_to_pixels(*result.anchor, w, h),
+    # Head marker (midpoint between the eyes, so it sits on the face in the
+    # preview) and gaze point
+    cv2.drawMarker(frame, norm_to_pixels(*result.head, w, h),
                    (0, 255, 255), cv2.MARKER_CROSS, 24, 2)
     cv2.circle(frame, norm_to_pixels(result.nx, result.ny, w, h), 18, GREEN, -1,
                cv2.LINE_AA)
@@ -208,8 +212,6 @@ def run(args):
             result = engine.process(frame)
             if exporter is not None:
                 exporter.add(result)
-            if result.dwell is not None and result.dwell.selected:
-                print(f"selected {result.dwell.region}")
             cv2.imshow(WINDOW, draw(frame, result, engine))
             if not handle_key(cv2.waitKey(1) & 0xFF, engine):
                 break
