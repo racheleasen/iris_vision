@@ -347,6 +347,11 @@ class GazeEngine:
                             col=self._col, row=self._row, anchor=anchor,
                             head=gm.origin_norm(origin_raw, w, h), dwell=dwell)
 
+    @property
+    def calibrating(self):
+        """True while the centre calibration is running."""
+        return self._calib.active
+
     def recalibrate(self):
         """Show the centre target again and recapture the centre pose."""
         self._calib.start()

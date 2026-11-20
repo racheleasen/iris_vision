@@ -63,6 +63,7 @@ Press these while the preview window is selected.
 | --- | --- |
 | `ESC` | Quit |
 | `C` | Recalibrate (look at the centre dot) |
+| `T` | Run the [accuracy test](#measuring-accuracy) (or click **Test accuracy** in the preview) |
 | `[` / `]` | Decrease / increase how far the dot moves when you look down |
 | `-` / `=` | Decrease / increase how far the dot moves when you look up |
 
@@ -77,6 +78,7 @@ Add these after `python3 main.py`. You can combine them.
 | `--camera N` | Which camera to use, if you have more than one. Defaults to `0`. |
 | `--no-calibrate` | Skip the calibration on start. Press `C` to run it later. |
 | `--dwell SECONDS` | Select a region by resting your gaze on it for this long, e.g. `1.0`. Off by default. |
+| `--screen-cm CM` `--distance-cm CM` | Your screen's width and your distance from it, so the accuracy test reports angles for your setup. Give both or neither. |
 
 For example:
 
@@ -97,6 +99,28 @@ python3 main.py --dwell 1.0
 A bar fills along the bottom of the active region while you hold your gaze there. When it is full, the region's outline turns thick and the label changes from `looking` to `selected`.
 
 A region is selected once per look: to select it again, look away and come back. A blink does not restart the timer, but losing your face for more than about a third of a second does.
+
+### Measuring accuracy
+
+Press **T**, or click **Test accuracy** in the top-right corner of the preview, to measure how well tracking is working for you right now. A dot appears at the centre and then at the middle of each of the six regions. Look at each dot and hold still while the ring fills (about 2 seconds per dot). The gaze dot is hidden during the test, so you look at the target instead of following the dot.
+
+Afterwards the preview shows each target (white ring), where your gaze landed on average (green dot), the error at each target, and this summary:
+
+| Statistic | Meaning |
+| --- | --- |
+| **Accuracy** | Mean angular error between your gaze and the target, in degrees. Lower is better. Also shows the median and the worst target. |
+| **Precision** | How steady the gaze is while you look at one point: RMS sample-to-sample distance, and standard deviation (SD) around the average. The gaze is smoothed, so these are lower than raw jitter would be. |
+| **Bias** | The average offset: a consistent drift in one direction usually means you should recalibrate (`C`) or adjust the vertical gain. |
+| **Region hits** | How often the reported region matched the target's region. The centre target sits on a grid line and is left out. |
+| **Data loss** | Frames where your face wasn't found while a target was being recorded. |
+
+The summary is printed in the terminal too, and with `--export` each test is saved in the file's `accuracy_tests` list. Click or press any key to return to tracking, or press **T** to test again.
+
+Angles are measured from an eye centred in front of the screen. By default the test uses the screen size the gaze model assumes (about 24° across, roughly a laptop at arm's length). For angles in your own setup, give your screen width and viewing distance, and maximise the preview window:
+
+```shell
+python3 main.py --screen-cm 34 --distance-cm 60
+```
 
 ### The six regions
 
@@ -129,6 +153,11 @@ The calibration dot sits on the line between the two rows, so a gaze resting at 
   "selections": [
     {"frame": 97, "t": 3.2333, "region": "top center"}
   ],
+  "accuracy_tests": [
+    {"t": 41.2, "accuracy_deg": 4.3, "median_deg": 3.9, "rms_s2s_deg": 0.21,
+     "sd_deg": 0.64, "bias_x_deg": 1.1, "bias_y_deg": -0.8,
+     "region_hit_rate": 0.83, "data_loss": 0.02, "targets": ["..."]}
+  ],
   "samples": [
     {"frame": 12, "t": 0.412, "x": 963, "y": 547,
      "nx": 0.5016, "ny": 0.5065, "region": "top center"}
@@ -149,6 +178,8 @@ Each entry in `samples` is one camera frame:
 `x` and `y` start at the top-left corner of the screen: `x` grows to the right and `y` grows downward, from your point of view. Looking at the left of the screen gives a small `x`.
 
 `calibration` describes the most recent calibration (`t` is when it finished), or is `null` if you never calibrated.
+
+`accuracy_tests` holds one entry per [accuracy test](#measuring-accuracy) run, with the summary statistics, the `geometry` used for the angles, and a `targets` list with the same statistics for each target (`null` where a target had too few tracked frames).
 
 `dwell_seconds` is the `--dwell` time, or `null` if dwell was off. `selections` lists every dwell selection: the frame and time the dwell completed, and the region that was selected.
 
@@ -214,12 +245,13 @@ The gaze fields from `nx` to `dwell` are `None` unless `status` is `"tracking"`.
 
 On the public [MPIIFaceGaze](https://www.perceptualui.org/research/datasets/MPIIFaceGaze/) dataset the gaze direction is off by about **5°** on average (5.1° on subjects not used for tuning). See [`benchmark/README.md`](benchmark/README.md).
 
-The code is three files:
+The code is four files:
 
 | File | What it holds |
 | --- | --- |
 | `main.py` | The program you run: camera loop, preview window, keys, and JSON export. |
 | `src/gaze_engine.py` | The gaze engine. Takes camera frames, keeps the tracking state (calibration, smoothing, dwell timer), and returns a result for each frame. No window or camera code. |
+| `src/accuracy_test.py` | The accuracy test: target sequence and the statistics. No window or camera code. |
 | `src/gaze_math.py` | The math: eye and head features to gaze direction, sphere filter, screen projection, head anchor, and the six regions. Needs only NumPy. |
 
 ## Troubleshooting

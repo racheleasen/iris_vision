@@ -14,7 +14,8 @@ there becomes "looking at the centre" for this person, head position and camera.
 Screen coordinates use a top-left origin, x right and y down, from the user's
 point of view. README.md documents the options and the export format.
 
-Keys: ESC quit, C recalibrate, [ ] vertical gain looking down, - = looking up.
+Keys: ESC quit, C recalibrate, T accuracy test, [ ] vertical gain looking down,
+- = looking up. Clicking the "Test accuracy" button also starts the test.
 """
 
 import argparse
@@ -24,6 +25,7 @@ from datetime import datetime, timezone
 
 import cv2
 
+from src.accuracy_test import AccuracyTest
 from src.gaze_engine import GazeEngine
 from src.gaze_math import (HEAD_MIRROR_X, REGION_COLS, REGION_NAMES, REGION_ROWS,
                            norm_to_pixels)
@@ -44,6 +46,7 @@ class GazeExporter:
         self.created = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.samples = []
         self.selections = []
+        self.accuracy_tests = []
 
     def add(self, result):
         if result.region is None:       # no face, or the calibration target is up
@@ -74,6 +77,7 @@ class GazeExporter:
             "calibration": calibration,
             "dwell_seconds": engine.dwell_s,
             "selections": self.selections,
+            "accuracy_tests": self.accuracy_tests,
             "samples": self.samples,
         }
         tmp = f"{self.path}.tmp"
@@ -82,32 +86,105 @@ class GazeExporter:
             f.write("\n")
         os.replace(tmp, self.path)
 
+# ---- UI state --------------------------------------------------------------
+class Ui:
+    """What the preview is showing besides live tracking: a running accuracy
+    test, or the report of the last one."""
+
+    def __init__(self):
+        self.test = None        # AccuracyTest while one runs
+        self.report = None      # AccuracyReport until dismissed
+        self.button = None      # (x0, y0, x1, y1) of the test button, if drawn
+        self.clicked = False    # the button was clicked since the last frame
+
+    def on_mouse(self, event, x, y, flags, param):
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        if self.report is not None:
+            self.report = None              # a click dismisses the report
+        elif self.button is not None:
+            x0, y0, x1, y1 = self.button
+            self.clicked = x0 <= x <= x1 and y0 <= y <= y1
+
 # ---- Preview ---------------------------------------------------------------
-def draw_calibration(frame, calibration):
-    """Dim the preview and draw the centre target with capture progress."""
+def draw_target(frame, c, capturing, progress, text):
+    """Dim the preview and draw a target at pixel `c` with capture progress."""
     h, w, _ = frame.shape
     frame = cv2.convertScaleAbs(frame, alpha=0.3)
-    c = (w // 2, h // 2)
     cv2.circle(frame, c, 22, WHITE, 2, cv2.LINE_AA)
     cv2.circle(frame, c, 6, (0, 0, 255), -1, cv2.LINE_AA)
-    text = "Look at the dot"
-    if calibration.capturing:
-        cv2.ellipse(frame, c, (34, 34), -90, 0, 360 * calibration.progress,
-                    GREEN, 4, cv2.LINE_AA)
-        text = "Hold still..."
+    if capturing:
+        cv2.ellipse(frame, c, (34, 34), -90, 0, 360 * progress, GREEN, 4, cv2.LINE_AA)
     (tw, _), _ = cv2.getTextSize(text, FONT, 0.9, 2)
-    cv2.putText(frame, text, ((w - tw) // 2, h // 2 - 60), FONT, 0.9, WHITE,
-                2, cv2.LINE_AA)
+    ty = c[1] - 60 if c[1] > h // 3 else c[1] + 80
+    tx = min(w - tw - 10, max(10, c[0] - tw // 2))
+    cv2.putText(frame, text, (tx, ty), FONT, 0.9, WHITE, 2, cv2.LINE_AA)
     return frame
 
-def draw(frame, result, engine):
+def draw_calibration(frame, calibration):
+    h, w, _ = frame.shape
+    text = "Hold still..." if calibration.capturing else "Look at the dot"
+    return draw_target(frame, (w // 2, h // 2), calibration.capturing,
+                       calibration.progress, text)
+
+def draw_test(frame, test, t):
+    h, w, _ = frame.shape
+    capturing = test.capturing(t)
+    text = f"{'Hold still' if capturing else 'Look at the dot'}  " \
+           f"{test.index + 1}/{len(test.targets)}"
+    return draw_target(frame, norm_to_pixels(*test.target, w, h), capturing,
+                       test.progress(t), text)
+
+def draw_report(frame, report):
+    """Dim the preview; draw each target, the mean gaze for it and the error."""
+    h, w, _ = frame.shape
+    frame = cv2.convertScaleAbs(frame, alpha=0.25)
+    for s in report.targets:
+        tc = norm_to_pixels(*s.target, w, h)
+        cv2.circle(frame, tc, 14, WHITE, 2, cv2.LINE_AA)
+        if s.mean is None:
+            cv2.putText(frame, "lost", (tc[0] + 18, tc[1] + 5), FONT, 0.5, WHITE, 1,
+                        cv2.LINE_AA)
+            continue
+        mc = norm_to_pixels(*s.mean, w, h)
+        cv2.line(frame, tc, mc, GREEN, 1, cv2.LINE_AA)
+        cv2.circle(frame, mc, 7, GREEN, -1, cv2.LINE_AA)
+        cv2.putText(frame, f"{s.error_deg:.1f} deg", (tc[0] + 18, tc[1] + 5), FONT,
+                    0.5, WHITE, 1, cv2.LINE_AA)
+    lines = report.lines() + ["Click or press any key to continue, T to test again"]
+    for i, line in enumerate(lines):
+        cv2.putText(frame, line, (20, 30 + 26 * i), FONT, 0.6 if i else 0.75,
+                    GREEN if i == 0 else WHITE, 2 if i == 0 else 1, cv2.LINE_AA)
+    return frame
+
+def draw_button(frame, ui):
+    """The 'Test accuracy' button in the top-right corner."""
+    h, w, _ = frame.shape
+    text = "Test accuracy (T)"
+    (tw, th), _ = cv2.getTextSize(text, FONT, 0.6, 2)
+    x1, y0 = w - 15, 15
+    x0, y1 = x1 - tw - 24, y0 + th + 20
+    cv2.rectangle(frame, (x0, y0), (x1, y1), (40, 40, 40), -1)
+    cv2.rectangle(frame, (x0, y0), (x1, y1), GREEN, 2)
+    cv2.putText(frame, text, (x0 + 12, y1 - 10), FONT, 0.6, WHITE, 2, cv2.LINE_AA)
+    ui.button = (x0, y0, x1, y1)
+
+def draw(frame, result, engine, ui):
     """Camera frame + GazeResult -> the frame to show in the preview window."""
     # Flip to a selfie view so overlays in the user's point of view line up
     # with the face. Tracking used the unflipped frame.
     if HEAD_MIRROR_X:
         frame = cv2.flip(frame, 1)
+    ui.button = None
     if result.calibration is not None:
         return draw_calibration(frame, result.calibration)
+    if ui.test is not None:
+        # No gaze dot during the test, so the user looks at the target rather
+        # than chasing the dot.
+        return draw_test(frame, ui.test, result.t)
+    if ui.report is not None:
+        return draw_report(frame, ui.report)
+    draw_button(frame, ui)
     if result.region is None:
         return frame
 
@@ -146,9 +223,26 @@ def draw(frame, result, engine):
                 (20, 60), FONT, 0.8, GREEN, 2)
     return frame
 
-def handle_key(key, engine):
+def new_test(engine, args):
+    width, height = engine.screen_size
+    if args.screen_cm is not None:
+        return AccuracyTest(width / height, args.screen_cm, args.distance_cm, "cm")
+    return AccuracyTest(width / height)
+
+def handle_key(key, engine, ui, args):
     """Handle one key press. Returns False when the user quits."""
-    if key in (ord('c'), ord('C')):
+    if key == 27:
+        return False
+    if ui.report is not None and key != 255:
+        ui.report = None                    # any key dismisses the report...
+        if key not in (ord('t'), ord('T')):
+            return True                     # ...and T also starts a new test
+    if key in (ord('t'), ord('T')) or ui.clicked:
+        ui.clicked = False
+        if not engine.calibrating and ui.test is None:
+            ui.test = new_test(engine, args)
+    elif key in (ord('c'), ord('C')):
+        ui.test = None
         engine.recalibrate()
     elif key == ord(']'):
         engine.gain_y_down += 0.1
@@ -158,7 +252,7 @@ def handle_key(key, engine):
         engine.gain_y_up += 0.1
     elif key == ord('-'):
         engine.gain_y_up = max(0.1, engine.gain_y_up - 0.1)
-    return key != 27
+    return True
 
 # ---- CLI -------------------------------------------------------------------
 def parse_screen_size(text):
@@ -192,7 +286,19 @@ def parse_args(argv=None):
     p.add_argument("--dwell", metavar="SECONDS", type=parse_dwell,
                    help="select a region by resting the gaze on it for this long, "
                         "e.g. 1.0 (default: off)")
-    return p.parse_args(argv)
+    p.add_argument("--screen-cm", metavar="CM", type=float,
+                   help="physical screen width, for accuracy test angles in your setup "
+                        "(use with --distance-cm)")
+    p.add_argument("--distance-cm", metavar="CM", type=float,
+                   help="distance from your eyes to the screen (use with --screen-cm)")
+    args = p.parse_args(argv)
+    if (args.screen_cm is None) != (args.distance_cm is None):
+        p.error("--screen-cm and --distance-cm must be given together")
+    for name in ("screen_cm", "distance_cm"):
+        value = getattr(args, name)
+        if value is not None and not 0 < value < float("inf"):
+            p.error(f"--{name.replace('_', '-')} must be positive")
+    return args
 
 # ---- Main ------------------------------------------------------------------
 def run(args):
@@ -202,7 +308,10 @@ def run(args):
     engine = GazeEngine(calibrate=not args.no_calibrate, dwell_s=args.dwell,
                         screen_size=args.screen_size)
     exporter = GazeExporter(args.export) if args.export else None
-    print("ESC to quit, C to recalibrate\n")
+    ui = Ui()
+    cv2.namedWindow(WINDOW)
+    cv2.setMouseCallback(WINDOW, ui.on_mouse)
+    print("ESC to quit, C to recalibrate, T to test accuracy\n")
 
     try:
         while True:
@@ -212,8 +321,15 @@ def run(args):
             result = engine.process(frame)
             if exporter is not None:
                 exporter.add(result)
-            cv2.imshow(WINDOW, draw(frame, result, engine))
-            if not handle_key(cv2.waitKey(1) & 0xFF, engine):
+            if ui.test is not None:
+                ui.test.update(result)
+                if ui.test.done:
+                    ui.report, ui.test = ui.test.report(), None
+                    print("\n".join(ui.report.lines()) + "\n")
+                    if exporter is not None:
+                        exporter.accuracy_tests.append(ui.report.to_dict())
+            cv2.imshow(WINDOW, draw(frame, result, engine, ui))
+            if not handle_key(cv2.waitKey(1) & 0xFF, engine, ui, args):
                 break
     except KeyboardInterrupt:
         pass
