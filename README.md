@@ -161,7 +161,7 @@ The settings live as constants near the top of the two files in `src/`. The ones
 
 | Constant | File | What it does |
 | --- | --- | --- |
-| `GAIN_Y_DOWN`, `GAIN_Y_UP` | `gaze_math.py` | How far the dot moves when you look down or up. Find good values live with `[` `]` and `-` `=`, then set them here to keep them. |
+| `GAIN_Y_DOWN`, `GAIN_Y_UP` | `gaze_math.py` | Extra vertical gain when you look down or up, on top of the benchmark-fitted model (`1.0` = as fitted). Find good values live with `[` `]` and `-` `=`, then set them here to keep them. |
 | `HEAD_MIRROR_X` | `gaze_math.py` | Set to `False` if your camera delivers a mirrored feed. |
 | `SMOOTH_ALPHA` | `gaze_engine.py` | How much the gaze point is smoothed. Lower is steadier but slower to react. |
 
@@ -208,9 +208,11 @@ The gaze fields from `nx` to `dwell` are `None` unless `status` is `"tracking"`.
 ## How it works
 
 1. [MediaPipe Face Mesh](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) finds your pupils and irises in each camera frame.
-2. The demo measures how far each pupil has moved from its calibrated centre position.
-3. That movement is lifted onto a unit sphere (a model of the eyeball rotating) and smoothed there.
+2. The demo measures, against the pose you calibrated at the centre, how far both pupils have moved (in eye widths), how open your eyelids are, and how far your head has turned.
+3. Those are turned into a gaze direction in degrees on a unit sphere (a model of the eyeball rotating) and smoothed there.
 4. The result is projected onto the screen as a gaze point and sorted into one of the six regions.
+
+On the public [MPIIFaceGaze](https://www.perceptualui.org/research/datasets/MPIIFaceGaze/) dataset the gaze direction is off by about **5°** on average (5.1° on subjects not used for tuning). See [`benchmark/README.md`](benchmark/README.md).
 
 The code is three files:
 
@@ -218,7 +220,7 @@ The code is three files:
 | --- | --- |
 | `main.py` | The program you run: camera loop, preview window, keys, and JSON export. |
 | `src/gaze_engine.py` | The gaze engine. Takes camera frames, keeps the tracking state (calibration, smoothing, dwell timer), and returns a result for each frame. No window or camera code. |
-| `src/gaze_math.py` | The math: sphere lift and filter, screen projection, head anchor, and the six regions. Needs only NumPy. |
+| `src/gaze_math.py` | The math: eye and head features to gaze direction, sphere filter, screen projection, head anchor, and the six regions. Needs only NumPy. |
 
 ## Troubleshooting
 

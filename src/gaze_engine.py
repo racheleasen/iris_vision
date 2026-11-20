@@ -25,17 +25,18 @@ import numpy as np
 from . import gaze_math as gm
 
 # ---- Config ----------------------------------------------------------------
-SMOOTH_ALPHA = 0.35     # pupil smoothing: lower is steadier but slower
+SMOOTH_ALPHA = 0.35     # feature smoothing: lower is steadier but slower
 BASELINE_ALPHA = 0.01   # drift rate of the uncalibrated baseline
 ORIGIN_ALPHA = 0.18     # smoothing of the eye centroid (head position)
 
 # MediaPipe Face Mesh landmark indices
-IRIS_L, IRIS_R = [469, 470, 471, 472], [474, 475, 476, 477]
-PUPIL_L, PUPIL_R = 468, 473
+PUPIL_L, PUPIL_R = 468, 473                 # iris centres
 L_INNER, L_OUTER = 133, 33                  # eye corners
 R_INNER, R_OUTER = 362, 263
-SOCKET_L = (L_OUTER, L_INNER, 159, 145)     # corners + upper and lower lid
-SOCKET_R = (R_OUTER, R_INNER, 386, 374)
+LID_L, LID_R = (159, 145), (386, 374)       # upper and lower lid
+SOCKET_L = (L_OUTER, L_INNER, *LID_L)       # corners + lids
+SOCKET_R = (R_OUTER, R_INNER, *LID_R)
+FOREHEAD, CHIN = 10, 152
 
 # Single-point centre calibration. The target is shown for CALIB_SETTLE_S so
 # the eyes can land on it, then pupil positions are collected for
@@ -48,6 +49,50 @@ CALIB_MIN_SAMPLES = 12
 # Dwell: the face may be lost for this long (a blink) without the dwell on the
 # current region starting over.
 DWELL_GRACE_S = 0.3
+
+# ---- Per-frame geometry ----------------------------------------------------
+# Pure functions shared by GazeEngine.update() and the benchmark
+# (benchmark/run_engine_py.py), so the benchmark scores the real engine.
+
+def measure(landmarks, width, height):
+    """Face Mesh landmarks -> the per-frame quantities the engine works from.
+
+    Returns a dict with
+      `features`    the gaze features (gaze_math.FEATURES), before the
+                    "looking at the centre" baseline is subtracted
+      `origin_raw`  midpoint of the two eye-socket centroids, camera pixels
+    """
+    w, h = width, height
+
+    def px(i):
+        return np.array([landmarks[i].x * w, landmarks[i].y * h], dtype=np.float32)
+
+    def px3(i):   # Face Mesh z uses roughly the same scale as x
+        return np.array([landmarks[i].x * w, landmarks[i].y * h, landmarks[i].z * w])
+
+    eye_L = gm.eye_features(px(PUPIL_L), px(L_INNER), px(L_OUTER), px(LID_L[0]), px(LID_L[1]))
+    eye_R = gm.eye_features(px(PUPIL_R), px(R_INNER), px(R_OUTER), px(LID_R[0]), px(LID_R[1]))
+    head = gm.head_angles(px3(L_OUTER), px3(R_OUTER), px3(FOREHEAD), px3(CHIN))
+
+    # Head position: midpoint of the two eye socket centroids
+    socket_L = np.mean([px(i) for i in SOCKET_L], axis=0)
+    socket_R = np.mean([px(i) for i in SOCKET_R], axis=0)
+
+    return {
+        "features": gm.combine_features(eye_L, eye_R, head),
+        "origin_raw": 0.5 * (socket_L + socket_R),
+    }
+
+def calibration_baseline(measurements):
+    """Median features over frames of looking at the centre (the calibration)."""
+    return np.median(np.array([m["features"] for m in measurements]), axis=0)
+
+def settled_direction(m, base, gain_y_up=gm.GAIN_Y_UP, gain_y_down=gm.GAIN_Y_DOWN):
+    """The direction GazeEngine.update() settles on when frame `m` is held.
+
+    `base` is the baseline from calibration_baseline().
+    """
+    return gm.gaze_direction(m["features"] - base, gain_y_up, gain_y_down)
 
 # ---- Structured result -----------------------------------------------------
 @dataclass(frozen=True)
@@ -98,14 +143,15 @@ class CenterCalibration:
     """Single-point calibration: the user looks at a target in the centre.
 
     While `active`, feed it one observation per tracked frame. When it
-    finishes it holds the pupil offsets (in iris radii, so they survive the
-    user moving closer or further away) and the head position that together
-    mean "looking at the screen centre".
+    finishes it holds the gaze features (pupil offsets in eye widths, so they
+    survive the user moving closer or further away, lid opening and head
+    rotation) and the head position that together mean "looking at the
+    screen centre".
     """
 
     def __init__(self, active=True):
         self.done = False
-        self.base_L = self.base_R = None   # pupil offset / iris radius
+        self.base = None                   # gaze features (gaze_math.FEATURES)
         self.origin = None                 # normalised eye centroid
         self.start()
         self.active = active
@@ -134,7 +180,7 @@ class CenterCalibration:
             return self._finish()
         return False
 
-    def feed(self, now, pupil_L, pupil_R, origin):
+    def feed(self, now, features, origin):
         """Add one tracked frame. Returns True when calibration completes."""
         if not self.active:
             return False
@@ -143,7 +189,7 @@ class CenterCalibration:
         elapsed = self._elapsed(now)
         if elapsed < CALIB_SETTLE_S:
             return False
-        self._samples.append((*pupil_L, *pupil_R, *origin))
+        self._samples.append((*features, *origin))
         if elapsed < CALIB_SETTLE_S + CALIB_CAPTURE_S:
             return False
         return self._finish()
@@ -153,9 +199,9 @@ class CenterCalibration:
             self.start()            # not enough data: try again
             return False
         # Median, so blinks and stray saccades during the capture are ignored.
-        med = np.median(np.array(self._samples, dtype=np.float32), axis=0)
-        self.base_L, self.base_R = med[0:2], med[2:4]
-        self.origin = (float(med[4]), float(med[5]))
+        med = np.median(np.array(self._samples), axis=0)
+        self.base = med[:-2]
+        self.origin = (float(med[-2]), float(med[-1]))
         self.active = False
         self.done = True
         return True
@@ -217,8 +263,8 @@ class GazeEngine:
         self._calib = CenterCalibration(active=calibrate)
         self._dwell = DwellTimer(dwell_s) if dwell_s is not None else None
         self._filter = gm.GazeS2Filter()
-        self._base_L = self._base_R = None
-        self._smooth_L = self._smooth_R = None
+        self._base = None
+        self._smooth = None
         self._origin = None
         self._col = self._row = None
         self._frame = -1
@@ -259,50 +305,29 @@ class GazeEngine:
                 self._dwell.lost(now)
             return self._result(now, face=False)
 
-        def px(i):
-            return np.array([landmarks[i].x * w, landmarks[i].y * h], dtype=np.float32)
-
-        # Pupils and iris radius (the unit all displacements are scaled by)
-        pL, pR = px(PUPIL_L), px(PUPIL_R)
-        rL = gm.median_radius(np.array([px(i) for i in IRIS_L]), pL)
-        rR = gm.median_radius(np.array([px(i) for i in IRIS_R]), pR)
-        r_iris = 0.5 * (rL + rR)
-        scale = r_iris + 1e-6
-
-        # Head position: midpoint of the two eye socket centroids
-        socket_L = np.mean([px(i) for i in SOCKET_L], axis=0)
-        socket_R = np.mean([px(i) for i in SOCKET_R], axis=0)
-        origin_raw = 0.5 * (socket_L + socket_R)
+        m = measure(landmarks, w, h)
+        origin_raw = m["origin_raw"]
         origin = self._origin = gm.smooth(self._origin, origin_raw, ORIGIN_ALPHA)
-
-        # Pupil displacement relative to the midpoint of the eye corners
-        pL_rel = pL - 0.5 * (px(L_INNER) + px(L_OUTER))
-        pR_rel = pR - 0.5 * (px(R_INNER) + px(R_OUTER))
 
         # Centre calibration
         if self._calib.active:
-            if not self._calib.feed(now, pL_rel / scale, pR_rel / scale,
+            if not self._calib.feed(now, m["features"],
                                     gm.origin_norm(origin_raw, w, h)):
                 return self._result(now, face=True)
             self._on_calibrated(now)
 
         if self._calib.done:
-            # Fixed baseline: the pupil offsets captured while the user
-            # looked at the centre target, rescaled to the current iris size.
-            self._base_L = self._calib.base_L * r_iris
-            self._base_R = self._calib.base_R * r_iris
+            # Fixed baseline: the features captured while the user looked at
+            # the centre target.
+            self._base = self._calib.base
         else:
             # Uncalibrated: slowly adapting baseline.
-            self._base_L = gm.smooth(self._base_L, pL_rel, BASELINE_ALPHA)
-            self._base_R = gm.smooth(self._base_R, pR_rel, BASELINE_ALPHA)
+            self._base = gm.smooth(self._base, m["features"], BASELINE_ALPHA)
 
-        self._smooth_L = gm.smooth(self._smooth_L, pL_rel - self._base_L, SMOOTH_ALPHA)
-        self._smooth_R = gm.smooth(self._smooth_R, pR_rel - self._base_R, SMOOTH_ALPHA)
+        self._smooth = gm.smooth(self._smooth, m["features"] - self._base, SMOOTH_ALPHA)
 
-        # Displacement (in iris radii) -> gaze direction on S² -> screen offset
-        ux, uy = gm.fuse_binocular(self._smooth_L / scale, self._smooth_R / scale,
-                                   self.gain_y_up, self.gain_y_down)
-        g = self._filter.update(gm.sphere_lift(ux, uy))
+        # Features relative to the centre pose -> gaze direction on S² -> screen offset
+        g = self._filter.update(gm.gaze_direction(self._smooth, self.gain_y_up, self.gain_y_down))
         ix, iy = gm.project_to_screen(g, w / max(1, h))
 
         # Split the screen at the head anchor rather than at its centre,
@@ -342,7 +367,7 @@ class GazeEngine:
     # -- internals -----------------------------------------------------------
     def _on_calibrated(self, now):
         """Start the filters fresh from the calibrated centre."""
-        self._smooth_L = self._smooth_R = None
+        self._smooth = None
         self._filter = gm.GazeS2Filter()
         self._col = self._row = None
         self.calibrated_at = now - self._t_start

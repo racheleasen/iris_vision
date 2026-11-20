@@ -1,5 +1,5 @@
 """
-project iris: webcam gaze tracking demo (Gaussian binocular S² model).
+project iris: webcam gaze tracking demo (angular binocular S² model).
 
 Opens the camera, feeds every frame to the gaze engine and draws the result.
 The tracking is in src/gaze_engine.py and the geometry in src/gaze_math.py;
@@ -9,7 +9,7 @@ this file is only the camera loop, the preview window, the keys and the export.
     python3 main.py --dwell 1.0                      # select a region by resting on it
     python3 main.py --export gaze.json --screen-size 1920x1080
 
-On start, look at the centre target and hold still: the pupil position captured
+On start, look at the centre target and hold still: the eye and head pose captured
 there becomes "looking at the centre" for this person, head position and camera.
 Screen coordinates use a top-left origin, x right and y down, from the user's
 point of view. README.md documents the options and the export format.

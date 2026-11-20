@@ -1,7 +1,8 @@
 """
-Gaze math for project iris (Gaussian binocular S² model).
+Gaze math for project iris (angular binocular S² model).
 
-Pure functions and one small filter: pupil displacement -> unit sphere ->
+Pure functions and one small filter: eye and head features -> gaze direction
+on the unit sphere ->
 screen position -> 3x2 region. No camera, no MediaPipe and no drawing in here,
 only numpy, so every step can be used and tested on its own. The per-frame
 state machine that strings these together is in gaze_engine.py.
@@ -18,14 +19,26 @@ import numpy as np
 SCREEN_WIDTH_EYE_UNITS = 8.0
 SCREEN_Z_EYE_UNITS = 19.0
 CLAMP_FRAC = 0.99
-GAUSS_WIDTH = 11.7      # width of the Gaussian weighting on pupil displacement
-MIRROR = -1.0
+MIRROR = -1.0           # unmirrored camera: image-left is the user's right
 
-# Vertical gain, split by direction. Looking down, the lids and eye corners
-# travel with the eye, so the measured pupil shift is much smaller than for
-# an equal upward look. These are the defaults; main.py tunes them live.
-GAIN_Y_UP = 2.0
-GAIN_Y_DOWN = 2.0
+# Angular gaze model. Each feature is measured relative to the calibrated
+# "looking at the centre" pose and mapped to true gaze angles:
+#   sin(yaw)   = GAIN_X * pupil x offset (eye widths)
+#   sin(pitch) = GAIN_Y * pupil y offset (eye widths) + GAIN_LID * lid opening
+#   then head rotation since calibration is added back on, because the pupil
+#   only measures the eye's rotation inside the head.
+# Fitted to minimise mean angular error on MPIIFaceGaze subjects p00-p07 and
+# checked on held-out p08-p14 (benchmark/README.md).
+GAIN_X = 3.37
+GAIN_Y = 3.23
+GAIN_LID = -1.52        # eyes open wider when looking up
+HEAD_GAIN_YAW = 0.75
+HEAD_GAIN_PITCH = 0.19
+
+# Vertical gain multipliers on top of the fitted model, split by direction
+# (1.0 = as fitted). main.py tunes them live with [ ] and - =.
+GAIN_Y_UP = 1.0
+GAIN_Y_DOWN = 1.0
 
 # Head-position compensation. The neutral (straight ahead) gaze lands where
 # the eye centroid sits in the camera frame instead of always at the screen
@@ -49,9 +62,6 @@ REGION_NAMES = [f"{r} {c}" for r in REGION_ROWS for c in REGION_COLS]
 REGION_HYSTERESIS = 0.03
 
 # ---- Utils -----------------------------------------------------------------
-def median_radius(iris_pts, pupil):
-    return np.median(np.linalg.norm(iris_pts - pupil, axis=1))
-
 def smooth(prev, new, alpha):
     return new if prev is None else prev * (1 - alpha) + new * alpha
 
@@ -91,32 +101,50 @@ class GazeS2Filter:
         self.g = s2_exp(self.g, self.alpha * e)
         return self.g
 
-# ---- Pupil displacement -> gaze direction ----------------------------------
-def fuse_binocular(disp_L, disp_R, gain_y_up=GAIN_Y_UP, gain_y_down=GAIN_Y_DOWN):
-    """Gaussian binocular fusion of the two pupil displacements.
+# ---- Eye and head features -> gaze direction --------------------------------
+FEATURES = ("eye_x", "eye_y", "lid", "head_yaw", "head_pitch")
 
-    `disp_L` / `disp_R` are (x, y) displacements from the baseline in iris
-    radii. Each eye is weighted down the further it is from its baseline.
-    Returns the fused (ux, uy) in the user's point of view.
+def eye_features(pupil, inner, outer, lid_upper, lid_lower):
+    """One eye, in camera pixels -> (x offset, y offset, lid opening).
+
+    The pupil offset is from the midpoint of the eye corners, and it and the
+    lid opening are in eye widths, so they survive moving closer or further.
     """
-    xL, yL = disp_L
-    xR, yR = disp_R
-    wL = math.exp(-(xL * xL + yL * yL) / GAUSS_WIDTH)
-    wR = math.exp(-(xR * xR + yR * yR) / GAUSS_WIDTH)
-    gx = xL * wL
-    gy = yR * wR
-    gy *= gain_y_down if gy > 0 else gain_y_up   # image y grows downward
-    return MIRROR * gx, MIRROR * gy
+    width = np.linalg.norm(inner - outer) + 1e-6
+    off = (pupil - 0.5 * (inner + outer)) / width
+    return off[0], off[1], np.linalg.norm(lid_upper - lid_lower) / width
 
-def sphere_lift(ux, uy):
-    """Planar gaze offset (ux, uy) -> unit gaze vector on S² (z towards screen)."""
-    r2 = ux * ux + uy * uy
-    if r2 > CLAMP_FRAC * CLAMP_FRAC:
-        s = CLAMP_FRAC / math.sqrt(r2)
-        ux, uy = ux * s, uy * s
-        r2 = ux * ux + uy * uy
-    uz = math.sqrt(max(0.0, 1.0 - r2))
-    return normalize(np.array([ux, -uy, uz]))
+def head_angles(l_outer, r_outer, forehead, chin):
+    """3D landmarks (camera pixels, z on the x scale) -> head (yaw, pitch), radians.
+
+    Builds the face frame from the outer eye corners (x axis) and the
+    forehead-to-chin line (y axis); yaw and pitch are of its normal.
+    """
+    xa = normalize(r_outer - l_outer)
+    ya = chin - forehead
+    ya = normalize(ya - np.dot(ya, xa) * xa)
+    za = np.cross(xa, ya)
+    return math.atan2(za[0], za[2]), math.asin(float(np.clip(-za[1], -1.0, 1.0)))
+
+def combine_features(eye_L, eye_R, head):
+    """Both eyes' features and head angles -> one feature vector (FEATURES)."""
+    eyes = 0.5 * (np.array(eye_L, dtype=float) + np.array(eye_R, dtype=float))
+    return np.array([*eyes, *head], dtype=float)
+
+def gaze_direction(d, gain_y_up=GAIN_Y_UP, gain_y_down=GAIN_Y_DOWN):
+    """Features relative to the centre pose -> unit gaze vector on S².
+
+    The vector has x towards screen-right, y towards screen-down and z
+    towards the screen, from the user's point of view.
+    """
+    eye_x, eye_y, lid, head_yaw, head_pitch = d
+    sx = MIRROR * GAIN_X * eye_x
+    sy = GAIN_Y * eye_y + GAIN_LID * lid
+    sy *= gain_y_down if sy > 0 else gain_y_up   # image y grows downward
+    yaw = math.asin(float(np.clip(sx, -CLAMP_FRAC, CLAMP_FRAC))) - MIRROR * HEAD_GAIN_YAW * head_yaw
+    pitch = math.asin(float(np.clip(sy, -CLAMP_FRAC, CLAMP_FRAC))) + HEAD_GAIN_PITCH * head_pitch
+    return np.array([math.cos(pitch) * math.sin(yaw), math.sin(pitch),
+                     math.cos(pitch) * math.cos(yaw)])
 
 # ---- Screen geometry -------------------------------------------------------
 def tan_theta_max_from_screen(aspect):
